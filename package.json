@@ -1,0 +1,33 @@
+{
+    "name": "trade-bot",
+    "version": "1.0.0",
+    "description": "Telegram bot with Express and MongoDB",
+    "main": "src/index.js",
+    "type": "module",
+    "scripts": {
+        "start": "node src/index.js",
+        "dev": "node --watch src/index.js",
+        "up": "docker-compose up --build -d",
+        "down": "docker-compose down",
+        "clean": "docker-compose down",
+        "delete": "docker-compose down -v --rmi all --remove-orphans",
+        "logs": "docker-compose logs -f app",
+        "restart": "yarn down && yarn up && yarn logs"
+    },
+    "dependencies": {
+        "express": "^5.0.0",
+        "grammy": "^1.21.1",
+        "mongoose": "^8.0.3",
+        "zod": "^3.22.4",
+        "dotenv": "^16.3.1",
+        "node-fetch": "^3.3.2",
+        "ws": "^8.16.0",
+        "node-telegram-bot-api": "^0.64.0"
+    },
+    "devDependencies": {
+        "@types/node": "^20.10.5"
+    },
+    "engines": {
+        "node": ">=18.0.0"
+    }
+}
