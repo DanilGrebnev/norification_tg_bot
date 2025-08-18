@@ -1,9 +1,7 @@
 import { Bot } from 'grammy'
 
-/**
- * Подключение к Telegram боту
- */
-export async function connectToTgBot(options = {}) {
+/** Подключение к Telegram боту */
+export async function connectToTgBot(options = {}, successCallback) {
     return new Promise(async (resolve, reject) => {
         try {
             const { token } = options
@@ -24,12 +22,13 @@ export async function connectToTgBot(options = {}) {
             const botInfo = await bot.api.getMe()
             console.log(`[TgBot] Бот подключен: @${botInfo.username}`)
 
-            // Запускаем бота
-            await bot.start()
-
-            console.log('[TgBot] ✅ Telegram бот запущен')
-
-            resolve(bot)
+            // Запускаем бота в неблокирующем режиме
+            bot.start()
+            // Даем небольшую задержку для инициализации бота
+            setTimeout(() => {
+                resolve(bot)
+            }, 500)
+            successCallback?.()
         } catch (error) {
             console.error('[TgBot] Ошибка подключения к боту:', error.message)
             reject(error)

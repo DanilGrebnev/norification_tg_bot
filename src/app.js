@@ -27,7 +27,7 @@ export default class App {
         })
 
         // Логирование запросов
-        this.app.use((req, res, next) => {
+        this.app.use((req, _, next) => {
             console.log(`[Server] ${req.method} ${req.path}`)
             next()
         })
@@ -43,16 +43,6 @@ export default class App {
                 name: 'TradeBot API',
                 version: '1.0.0',
                 status: 'running',
-                timestamp: new Date().toISOString(),
-            })
-        })
-
-        // Проверка здоровья
-        this.app.get('/health', (req, res) => {
-            res.json({
-                status: 'healthy',
-                uptime: process.uptime(),
-                memory: process.memoryUsage(),
                 timestamp: new Date().toISOString(),
             })
         })
@@ -78,11 +68,12 @@ export default class App {
     /**
      * Запуск сервера
      */
-    start() {
+    start(successCallback) {
         return new Promise((resolve, reject) => {
             try {
                 this.server = this.app.listen(this.PORT, () => {
                     console.log(`[Server] Сервер запущен на порту ${this.PORT}`)
+                    successCallback?.()
                     resolve(this)
                 })
 
@@ -92,22 +83,6 @@ export default class App {
                 })
             } catch (error) {
                 reject(error)
-            }
-        })
-    }
-
-    /**
-     * Остановка сервера
-     */
-    stop() {
-        return new Promise((resolve) => {
-            if (this.server) {
-                this.server.close(() => {
-                    console.log('[Server] Сервер остановлен')
-                    resolve()
-                })
-            } else {
-                resolve()
             }
         })
     }

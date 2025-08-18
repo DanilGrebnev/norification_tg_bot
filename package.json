@@ -7,7 +7,7 @@
     "scripts": {
         "start": "node src/index.js",
         "dev": "node --watch src/index.js",
-        "up": "docker-compose up --build -d",
+        "up": "docker-compose up && yarn logs",
         "down": "docker-compose down",
         "clean": "docker-compose down",
         "delete": "docker-compose down -v --rmi all --remove-orphans",
@@ -15,14 +15,15 @@
         "restart": "yarn down && yarn up && yarn logs"
     },
     "dependencies": {
+        "dotenv": "^16.3.1",
         "express": "^5.0.0",
         "grammy": "^1.21.1",
         "mongoose": "^8.0.3",
-        "zod": "^3.22.4",
-        "dotenv": "^16.3.1",
         "node-fetch": "^3.3.2",
+        "node-telegram-bot-api": "^0.64.0",
+        "socket.io": "^4.8.1",
         "ws": "^8.16.0",
-        "node-telegram-bot-api": "^0.64.0"
+        "zod": "^3.22.4"
     },
     "devDependencies": {
         "@types/node": "^20.10.5"

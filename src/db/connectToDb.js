@@ -3,7 +3,7 @@ import mongoose from 'mongoose'
 /**
  * Подключение к базе данных
  */
-export async function connectToDb(options = {}) {
+export async function connectToDb(options = {}, successCallback) {
     return new Promise(async (resolve, reject) => {
         try {
             const { uri, dbName } = options
@@ -24,7 +24,7 @@ export async function connectToDb(options = {}) {
 
             // Настраиваем обработчики событий
             setupEventHandlers()
-
+            successCallback?.()
             resolve(mongoose.connection)
         } catch (error) {
             console.error('[Database] Ошибка подключения:', error.message)

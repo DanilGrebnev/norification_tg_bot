@@ -2,6 +2,8 @@ import dotenv from 'dotenv'
 import App from './app.js'
 import { connectToDb } from './db/connectToDb.js'
 import { connectToTgBot } from './tgBot/connectToTgBot.js'
+import WS from './websocket/WS.js'
+import CryptoOrders from './websocket/CryptoOrders.js'
 import { jsonMiddleware } from './middlewares/jsonMiddleware.js'
 import { corsMiddleware } from './middlewares/corsMiddleware.js'
 
@@ -16,26 +18,57 @@ const app = new App({
     middlewares: [...jsonMiddleware(), corsMiddleware()],
 })
 
-app.start()
+app.start(() => {
+    console.log('✅ Сервер запущен')
+})
     .then(() => {
-        console.log('✅ Сервер запущен')
-
-        // 2. Подключаемся к базе данных
-        return connectToDb({
-            uri: process.env.MONGODB_URI,
-            dbName: 'tradebot',
-        })
+        return connectToDb(
+            {
+                uri: process.env.MONGODB_URI,
+                dbName: 'tradebot',
+            },
+            () => console.log('✅ База данных подключена'),
+        )
     })
     .then(() => {
-        console.log('✅ База данных подключена')
-
-        // 3. Запускаем Telegram бота
-        return connectToTgBot({
-            token: process.env.BOT_TOKEN,
-        })
+        return connectToTgBot(
+            {
+                token: process.env.BOT_TOKEN,
+            },
+            () => console.log('✅ Telegram бот запущен'),
+        )
     })
     .then(() => {
-        console.log('✅ Telegram бот запущен')
+        const cryptoOrders = new CryptoOrders()
+        const wsConnections = new WS([
+            {
+                route: 'wss://ws.okx.com:8443/ws/v5/public',
+                headers: {
+                    'User-Agent': 'TradeBot/1.0',
+                    Origin: 'https://www.okx.com',
+                },
+                subscriptions: [
+                    {
+                        op: 'subscribe',
+                        args: [
+                            {
+                                channel: 'trades',
+                                instId: 'BTC-USDT',
+                            },
+                        ],
+                    },
+                ],
+                onMessage: [
+                    (data) => cryptoOrders.CalculateValueOnInterval(data),
+                ],
+            },
+        ])
+
+        // Ждем завершения подключения или получаем ошибку
+        return wsConnections.waitForConnection()
+    })
+    .then(() => {
+        console.log('✅ WebSocket подключен')
         console.log('🎉 TradeBot полностью запущен!')
     })
     .catch((error) => {
