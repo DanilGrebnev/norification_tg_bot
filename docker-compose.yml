@@ -22,6 +22,8 @@ services:
             - mongodb_data:/data/db
         environment:
             - MONGO_INITDB_DATABASE=tradebot
+        logging:
+            driver: 'none'
 
 volumes:
     mongodb_data:

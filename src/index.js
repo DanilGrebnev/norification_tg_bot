@@ -4,6 +4,7 @@ import { connectToDb } from './db/connectToDb.js'
 import { connectToTgBot } from './tgBot/connectToTgBot.js'
 import WS from './websocket/WS.js'
 import CryptoOrders from './websocket/CryptoOrders.js'
+import MultiExchangeAggregator from './websocket/MultiExchangeAggregator.js'
 import { jsonMiddleware } from './middlewares/jsonMiddleware.js'
 import { corsMiddleware } from './middlewares/corsMiddleware.js'
 
@@ -39,30 +40,11 @@ app.start(() => {
         )
     })
     .then(() => {
-        const cryptoOrders = new CryptoOrders()
-        const wsConnections = new WS([
-            {
-                route: 'wss://ws.okx.com:8443/ws/v5/public',
-                headers: {
-                    'User-Agent': 'TradeBot/1.0',
-                    Origin: 'https://www.okx.com',
-                },
-                subscriptions: [
-                    {
-                        op: 'subscribe',
-                        args: [
-                            {
-                                channel: 'trades',
-                                instId: 'BTC-USDT',
-                            },
-                        ],
-                    },
-                ],
-                onMessage: [
-                    (data) => cryptoOrders.CalculateValueOnInterval(data),
-                ],
-            },
-        ])
+        // const cryptoOrders = new CryptoOrders()
+        // const wsConnections = new WS([cryptoOrders.getWebSocketConfig()])
+
+        const multiExchange = new MultiExchangeAggregator()
+        const wsConnections = new WS(multiExchange.getAllConfigs())
 
         // Ждем завершения подключения или получаем ошибку
         return wsConnections.waitForConnection()

@@ -23,6 +23,35 @@ export default class CryptoOrders {
     }
 
     /**
+     * Получение настроек WebSocket подключения
+     */
+    getWebSocketConfig() {
+        return {
+            route: 'wss://ws.okx.com:8443/ws/v5/public',
+            headers: {
+                'User-Agent': 'TradeBot/1.0',
+                Origin: 'https://www.okx.com',
+            },
+            subscriptions: [
+                {
+                    op: 'subscribe',
+                    args: [
+                        {
+                            channel: 'trades',
+                            instId: 'BTC-USDT',
+                        },
+                    ],
+                },
+            ],
+            onMessage: [(data) => this.onMessage(data)],
+        }
+    }
+
+    onMessage(data) {
+        this.CalculateValueOnInterval(data)
+    }
+
+    /**
      * Расчет значений на интервале
      */
     CalculateValueOnInterval(data) {
