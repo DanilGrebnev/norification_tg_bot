@@ -36,9 +36,7 @@ export async function connectToTgBot(options = {}, successCallback) {
     })
 }
 
-/**
- * Настройка обработчиков команд и сообщений бота
- */
+/** Настройка обработчиков команд и сообщений бота */
 function setupBotHandlers(bot) {
     // Команда /start
     bot.command('start', async (ctx) => {
@@ -98,9 +96,7 @@ function setupBotHandlers(bot) {
     })
 }
 
-/**
- * Обработка подписок на интервалы
- */
+/** Обработка подписок на интервалы */
 async function handleSubscription(ctx, data) {
     try {
         // Извлекаем интервал из callback data (например, sub_30s -> 30)
@@ -144,9 +140,7 @@ async function handleSubscription(ctx, data) {
     }
 }
 
-/**
- * Клавиатура выбора интервалов
- */
+/** Клавиатура выбора интервалов */
 function getSubscriptionKeyboard() {
     const { InlineKeyboard } = require('grammy')
 
@@ -161,9 +155,7 @@ function getSubscriptionKeyboard() {
         .text('🕐 1 час', 'sub_1h')
 }
 
-/**
- * Форматирует интервал в читаемый вид
- */
+/** Форматирует интервал в читаемый вид */
 function formatInterval(seconds) {
     if (seconds < 60) {
         return `${seconds} секунд`

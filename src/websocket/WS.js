@@ -1,8 +1,6 @@
 import WebSocket from 'ws'
 
-/**
- * Класс-обёртка над нативным WebSocket
- */
+/** Класс-обёртка над нативным WebSocket */
 export default class WS {
     constructor(connections) {
         this.connections = connections
@@ -13,9 +11,7 @@ export default class WS {
         this.connectionPromise = this.init()
     }
 
-    /**
-     * Инициализация и подключение ко всем WebSocket серверам
-     */
+    /** Инициализация и подключение ко всем WebSocket серверам */
     async init() {
         const connectPromises = this.connections.map((config, index) =>
             this.connectSingle(config, index).catch((error) => {
@@ -45,9 +41,7 @@ export default class WS {
         }
     }
 
-    /**
-     * Подключение к одному WebSocket серверу
-     */
+    /** Подключение к одному WebSocket серверу */
     connectSingle(config, index) {
         return new Promise((resolve, reject) => {
             try {
@@ -60,7 +54,7 @@ export default class WS {
 
                 // Обработчик успешного подключения
                 socket.on('open', () => {
-                    console.log(`[${exchangeName}] ✅ Подключение установлено`)
+                    // console.log(`[${exchangeName}] ✅ Подключение установлено`)
 
                     // Вызываем колбэк onConnect если он есть
                     if (
@@ -78,10 +72,6 @@ export default class WS {
                         setTimeout(() => {
                             config.subscriptions.forEach((subscription) => {
                                 socket.send(JSON.stringify(subscription))
-                                console.log(
-                                    `[${exchangeName}] 📡 Отправлена подписка:`,
-                                    subscription,
-                                )
                             })
                         }, 1000)
                     }
@@ -148,46 +138,8 @@ export default class WS {
     }
 
     /**
-     * Отправка сообщения в конкретное подключение
-     */
-    send(connectionIndex, data) {
-        const socket = this.sockets[connectionIndex]
-        if (socket && socket.readyState === WebSocket.OPEN) {
-            socket.send(JSON.stringify(data))
-        } else {
-            console.warn(
-                `[WebSocket ${connectionIndex}] Подключение не активно`,
-            )
-        }
-    }
-
-    /**
-     * Закрытие всех подключений
-     */
-    closeAll() {
-        this.sockets.forEach((socket, index) => {
-            if (socket) {
-                console.log(`[WebSocket ${index}] Закрытие подключения`)
-                socket.close()
-            }
-        })
-        this.sockets = []
-    }
-
-    /**
-     * Получение статуса всех подключений
-     */
-    getStatus() {
-        return this.sockets.map((socket, index) => ({
-            index,
-            route: this.connections[index]?.route,
-            connected: socket?.readyState === WebSocket.OPEN,
-        }))
-    }
-
-    /**
-     * Ожидание завершения подключения
-     * Возвращает промис, который resolve при успехе или reject при ошибке
+     * Ожидание завершения подключения.
+     * Возвращает промис, который resolve при успехе или reject при ошибке.
      */
     waitForConnection() {
         return this.connectionPromise

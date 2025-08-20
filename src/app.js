@@ -1,8 +1,6 @@
 import express from 'express'
 
-/**
- * Класс приложения Express сервера
- */
+/** Класс приложения Express сервера */
 export default class App {
     constructor(options = {}) {
         this.PORT = options.PORT || 3000
@@ -15,9 +13,7 @@ export default class App {
         this.setupRoutes()
     }
 
-    /**
-     * Настройка middleware
-     */
+    /** Настройка middleware */
     setupMiddlewares() {
         // Применяем переданные middleware
         this.middlewares.forEach((middleware) => {
@@ -33,9 +29,7 @@ export default class App {
         })
     }
 
-    /**
-     * Настройка маршрутов
-     */
+    /** Настройка маршрутов */
     setupRoutes() {
         // Главная страница
         this.app.get('/', (req, res) => {
@@ -65,9 +59,7 @@ export default class App {
         })
     }
 
-    /**
-     * Запуск сервера
-     */
+    /** Запуск сервера */
     start(successCallback) {
         return new Promise((resolve, reject) => {
             try {
@@ -87,9 +79,7 @@ export default class App {
         })
     }
 
-    /**
-     * Получить Express приложение
-     */
+    /** Получить Express приложение */
     getApp() {
         return this.app
     }

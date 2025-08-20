@@ -3,7 +3,7 @@ import App from './app.js'
 import { connectToDb } from './db/connectToDb.js'
 import { connectToTgBot } from './tgBot/connectToTgBot.js'
 import WS from './websocket/WS.js'
-import CryptoOrders from './websocket/CryptoOrders.js'
+
 import MultiExchangeAggregator from './websocket/MultiExchangeAggregator.js'
 import { jsonMiddleware } from './middlewares/jsonMiddleware.js'
 import { corsMiddleware } from './middlewares/corsMiddleware.js'
@@ -40,9 +40,6 @@ app.start(() => {
         )
     })
     .then(() => {
-        // const cryptoOrders = new CryptoOrders()
-        // const wsConnections = new WS([cryptoOrders.getWebSocketConfig()])
-
         const multiExchange = new MultiExchangeAggregator()
         const wsConnections = new WS(multiExchange.getAllConfigs())
 

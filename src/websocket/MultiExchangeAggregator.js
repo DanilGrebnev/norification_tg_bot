@@ -1,264 +1,178 @@
-import VolumeAnalyzer from '../analysis/VolumeAnalyzer.js'
+import VolumeAggregator from './VolumeAggregator.js'
+import { EXCHANGES } from '../exchanges/ExchangeConfigList.js'
 
-/**
- * Класс для подключения к трём биржам по WebSocket
- */
+/** Главный класс для управления подключениями ко всем биржам и агрегации данных по объемам торгов */
 export default class MultiExchangeAggregator {
     constructor() {
-        this.volumeAnalyzer = new VolumeAnalyzer()
-        this.exchanges = {
-            binance: {
-                ws: null,
-                url: 'wss://stream.binance.com:9443/ws/btcusdt@trade',
-                data: { price: 0, volume: 0, timestamp: 0 },
-            },
-            bybit: {
-                ws: null,
-                url: 'wss://stream.bybit.com/v5/public/spot',
-                data: { price: 0, volume: 0, timestamp: 0 },
-            },
-            coinbase: {
-                ws: null,
-                url: 'wss://ws-feed.pro.coinbase.com',
-                data: { price: 0, volume: 0, timestamp: 0 },
-            },
-        }
+        // Создаем экземпляры бирж (готовые из ExchangeConfigList)
+        this.exchanges = EXCHANGES
 
-        this.candleData = {
-            open: null,
-            high: 0,
-            low: Infinity,
-            close: 0,
-            volume: 0,
-            timestamp: null,
-            interval: 60000, // 1 минута
-        }
+        // Создаем агрегатор объемов
+        this.volumeAggregator = new VolumeAggregator(this.exchanges)
 
-        this.trades = []
-        this.connectionStatus = {
-            binance: false,
-            bybit: false,
-            coinbase: false,
-        }
-        this.allConnectionsReady = false
+        // Статус подключений
+        this.connectionStatus = {}
+        this.allConnectionsChecked = false
+        this.connectionCheckTimeout = null
+
+        // Инициализируем статусы
+        this.exchanges.forEach((exchange) => {
+            this.connectionStatus[exchange.exchangeName] = 'connecting'
+            console.log(`🔄 [${exchange.exchangeName}] -> подключение...`)
+        })
+
+        // Устанавливаем таймаут для проверки подключений (30 секунд)
+        this.connectionCheckTimeout = setTimeout(() => {
+            this.checkAllConnections(true)
+        }, 30000)
     }
 
-    /**
-     * Получение конфигурации для Binance WebSocket
-     *
-     * @typedef {Object} BinanceTradeData
-     * @property {string} e - Тип события ('trade')
-     * @property {number} E - Время события (timestamp в миллисекундах)
-     * @property {string} s - Торговая пара ('BTCUSDT')
-     * @property {number} t - ID сделки
-     * @property {string} p - Цена сделки
-     * @property {string} q - Количество (объем)
-     * @property {number} T - Время сделки (timestamp)
-     * @property {boolean} m - Maker side (false = покупка, true = продажа)
-     * @property {boolean} M - Ignore (можно игнорировать)
-     *
-     * Пример данных:
-     * {
-     *   e: 'trade',
-     *   E: 1755613765692,
-     *   s: 'BTCUSDT',
-     *   t: 5170731426,
-     *   p: '114130.01000000',
-     *   q: '0.00438000',
-     *   T: 1755613765692,
-     *   m: false,
-     *   M: true
-     * }
-     */
-    getBinanceConfig() {
-        return {
-            exchangeName: 'Binance',
-            route: 'wss://stream.binance.com:9443/ws/btcusdt@trade',
-            headers: {
-                'User-Agent': 'TradeBot/1.0',
-            },
-            subscriptions: [],
-            onMessage: [
-                (data) => {
-                    // Обрабатываем сделки сразу по приходу, не дожидаясь всех подключений
-                    this.volumeAnalyzer.processBinanceTrade(data)
-                    // console.log('[Binance]', data) // Временно отключено
-                },
-            ],
-            onConnect: () => {
-                console.log('✅ Binance WebSocket подключен')
-                this.connectionStatus.binance = true
+    /** Получение конфигураций WebSocket для всех бирж */
+    getAllConfigs() {
+        return this.exchanges.map((exchange) => {
+            const config = exchange.getConfig()
+
+            // Переопределяем обработчики для отслеживания статуса
+            const originalOnConnect = config.onConnect
+            const originalOnError = config.onError
+            const originalOnClose = config.onClose
+
+            config.onConnect = () => {
+                this.connectionStatus[exchange.exchangeName] = 'connected'
+                originalOnConnect()
                 this.checkAllConnections()
-            },
-            onError: (error) => {
-                console.log(
-                    '❌ Binance WebSocket ошибка подключения:',
-                    error.message,
-                )
-                this.connectionStatus.binance = 'error'
+            }
+
+            config.onError = (error) => {
+                this.connectionStatus[exchange.exchangeName] = 'error'
+                originalOnError(error)
                 this.checkAllConnections()
-            },
-        }
+            }
+
+            config.onClose = () => {
+                this.connectionStatus[exchange.exchangeName] = 'disconnected'
+                originalOnClose()
+            }
+
+            return config
+        })
     }
 
-    /**
-     * Получение конфигурации для Bybit WebSocket
-     *
-     * @typedef {Object} BybitTradeData
-     * @property {string} topic - Канал подписки ('publicTrade.BTCUSDT')
-     * @property {number} ts - Timestamp сообщения в миллисекундах
-     * @property {string} type - Тип данных ('snapshot' или 'delta')
-     * @property {Array<BybitTrade>} data - Массив сделок
-     *
-     * @typedef {Object} BybitTrade
-     * @property {string} i - ID сделки
-     * @property {number} T - Timestamp сделки в миллисекундах
-     * @property {string} p - Цена сделки
-     * @property {string} v - Объем сделки
-     * @property {string} S - Сторона сделки ('Sell' или 'Buy')
-     * @property {number} seq - Sequence number
-     * @property {string} s - Символ торговой пары
-     * @property {boolean} BT - Block trade flag
-     * @property {boolean} RPI - Reduce position indicator
-     *
-     * Пример данных:
-     * {
-     *   topic: 'publicTrade.BTCUSDT',
-     *   ts: 1755613765932,
-     *   type: 'snapshot',
-     *   data: [{
-     *     i: '2290000000879452587',
-     *     T: 1755613765931,
-     *     p: '114123.9',
-     *     v: '0.000215',
-     *     S: 'Sell',
-     *     seq: 82836106168,
-     *     s: 'BTCUSDT',
-     *     BT: false,
-     *     RPI: false
-     *   }]
-     * }
-     */
-    getBybitConfig() {
-        return {
-            exchangeName: 'Bybit',
-            route: 'wss://stream.bybit.com/v5/public/spot',
-            headers: {
-                'User-Agent': 'TradeBot/1.0',
-            },
-            subscriptions: [
-                {
-                    op: 'subscribe',
-                    args: ['publicTrade.BTCUSDT'],
-                },
-            ],
-            onMessage: [
-                (data) => {
-                    if (data.data) {
-                        data.data.forEach((trade) => {
-                            this.volumeAnalyzer.processBybitTrade(trade)
-                        })
-                        // console.log('[Bybit]', data) // Временно отключено
-                    }
-                },
-            ],
-            onConnect: () => {
-                console.log('✅ Bybit WebSocket подключен')
-                this.connectionStatus.bybit = true
-                this.checkAllConnections()
-            },
-            onError: (error) => {
-                console.log(
-                    '❌ Bybit WebSocket ошибка подключения:',
-                    error.message,
-                )
-                this.connectionStatus.bybit = 'error'
-                this.checkAllConnections()
-            },
-        }
-    }
-
-    /**
-     * Получение конфигурации для Coinbase WebSocket
-     *
-     * @typedef {Object} CoinbaseData
-     * @property {*} [data] - Структура данных пока неизвестна (не удается подключиться)
-     *
-     * TODO: Обновить документацию после успешного подключения к Coinbase
-     * Ожидаемый формат: ticker данные для BTC-USD пары
-     */
-    getCoinbaseConfig() {
-        return {
-            exchangeName: 'Coinbase',
-            route: 'wss://ws-feed.pro.coinbase.com',
-            headers: {
-                'User-Agent': 'TradeBot/1.0',
-            },
-            subscriptions: [
-                {
-                    type: 'subscribe',
-                    product_ids: ['BTC-USD'],
-                    channels: ['ticker'],
-                },
-            ],
-            onMessage: [
-                (data) => {
-                    // console.log('[Coinbase]', data) // Временно отключено
-                },
-            ],
-            onConnect: () => {
-                console.log('✅ Coinbase WebSocket подключен')
-                this.connectionStatus.coinbase = true
-                this.checkAllConnections()
-            },
-            onError: (error) => {
-                console.log(
-                    '❌ Coinbase WebSocket ошибка подключения:',
-                    error.message,
-                )
-                this.connectionStatus.coinbase = 'error'
-                this.checkAllConnections()
-            },
-        }
-    }
-
-    /**
-     * Проверка готовности всех подключений
-     */
-    checkAllConnections() {
+    /** Проверка статуса всех подключений */
+    checkAllConnections(forceCheck = false) {
+        // Проверяем, все ли подключения завершены (успешно или с ошибкой)
         const allResolved = Object.values(this.connectionStatus).every(
-            (status) => status === true || status === 'error',
+            (status) => status === 'connected' || status === 'error',
         )
 
-        if (allResolved && !this.allConnectionsReady) {
-            this.allConnectionsReady = true
+        if ((allResolved || forceCheck) && !this.allConnectionsChecked) {
+            this.allConnectionsChecked = true
 
-            // Выводим статус каждой биржи
-            console.log('📊 Статус подключений к биржам:')
-            Object.entries(this.connectionStatus).forEach(
-                ([exchange, status]) => {
-                    if (status === true) {
-                        console.log(`✅ ${exchange.toUpperCase()}: подключено`)
-                    } else if (status === 'error') {
-                        console.log(
-                            `❌ ${exchange.toUpperCase()}: ошибка подключения`,
-                        )
-                    }
-                },
-            )
+            // Очищаем таймаут
+            if (this.connectionCheckTimeout) {
+                clearTimeout(this.connectionCheckTimeout)
+                this.connectionCheckTimeout = null
+            }
 
-            console.log('🎯 Все подключения завершены, начинаем вывод данных')
+            this.displayConnectionSummary()
+            this.startVolumeAggregation()
         }
     }
 
-    /**
-     * Получение всех конфигураций WebSocket
-     */
-    getAllConfigs() {
-        return [
-            this.getBinanceConfig(),
-            this.getBybitConfig(),
-            this.getCoinbaseConfig(),
-        ]
+    /** Отображение итогового статуса подключений */
+    displayConnectionSummary() {
+        console.log('\n' + '='.repeat(60))
+        console.log('📊 СТАТУС ПОДКЛЮЧЕНИЙ К БИРЖАМ')
+        console.log('='.repeat(60))
+
+        let connectedCount = 0
+        let errorCount = 0
+
+        Object.entries(this.connectionStatus).forEach(
+            ([exchangeName, status]) => {
+                if (status === 'connected') {
+                    console.log(`✅ [${exchangeName}] -> подключено`)
+                    connectedCount++
+                } else if (status === 'error') {
+                    console.log(`❌ [${exchangeName}] -> не подключено`)
+                    errorCount++
+                } else {
+                    console.log(`🔄 [${exchangeName}] -> подключение...`)
+                }
+            },
+        )
+
+        console.log('='.repeat(60))
+        console.log(
+            `📈 Подключено: ${connectedCount} из ${this.exchanges.length} бирж`,
+        )
+
+        if (errorCount > 0) {
+            console.log(`⚠️ Ошибок подключения: ${errorCount}`)
+            console.log(
+                '💡 Приложение продолжит работу с подключенными биржами',
+            )
+        }
+
+        console.log('='.repeat(60) + '\n')
+    }
+
+    /** Запуск системы агрегации объемов */
+    startVolumeAggregation() {
+        const connectedExchanges = this.exchanges.filter(
+            (exchange) =>
+                this.connectionStatus[exchange.exchangeName] === 'connected',
+        )
+
+        if (connectedExchanges.length === 0) {
+            console.log('❌ Нет подключенных бирж для агрегации объемов')
+            return
+        }
+
+        console.log(
+            `🚀 Запуск системы агрегации объемов с ${connectedExchanges.length} биржами`,
+        )
+        this.volumeAggregator.start()
+    }
+
+    /** Остановка системы */
+    stop() {
+        if (this.connectionCheckTimeout) {
+            clearTimeout(this.connectionCheckTimeout)
+            this.connectionCheckTimeout = null
+        }
+
+        this.volumeAggregator.stop()
+        console.log('🛑 MultiExchangeAggregator остановлен')
+    }
+
+    /** Получение статуса системы */
+    getStatus() {
+        return {
+            exchanges: this.exchanges.length,
+            connectionStatus: this.connectionStatus,
+            allConnectionsChecked: this.allConnectionsChecked,
+            volumeAggregator: this.volumeAggregator.getStatus(),
+        }
+    }
+
+    /** Получение истории объемов */
+    getVolumeHistory() {
+        return this.volumeAggregator.getHistory()
+    }
+
+    /** Получение конкретной биржи по имени */
+    getExchange(exchangeName) {
+        return this.exchanges.find(
+            (exchange) => exchange.exchangeName === exchangeName,
+        )
+    }
+
+    /** Получение всех подключенных бирж */
+    getConnectedExchanges() {
+        return this.exchanges.filter(
+            (exchange) =>
+                this.connectionStatus[exchange.exchangeName] === 'connected',
+        )
     }
 }

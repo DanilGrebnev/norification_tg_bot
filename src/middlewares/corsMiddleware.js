@@ -1,6 +1,4 @@
-/**
- * CORS middleware
- */
+/** CORS middleware */
 export function corsMiddleware() {
     return (req, res, next) => {
         res.header('Access-Control-Allow-Origin', '*')

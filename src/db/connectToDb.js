@@ -1,8 +1,6 @@
 import mongoose from 'mongoose'
 
-/**
- * Подключение к базе данных
- */
+/** Подключение к базе данных */
 export async function connectToDb(options = {}, successCallback) {
     return new Promise(async (resolve, reject) => {
         try {
@@ -33,9 +31,7 @@ export async function connectToDb(options = {}, successCallback) {
     })
 }
 
-/**
- * Настройка обработчиков событий базы данных
- */
+/** Настройка обработчиков событий базы данных */
 function setupEventHandlers() {
     mongoose.connection.on('connected', () => {
         console.log('[Database] ✅ Соединение установлено')
