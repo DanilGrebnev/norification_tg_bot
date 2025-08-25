@@ -118,7 +118,7 @@ export default class MultiExchangeAggregator {
     }
 
     /** Запуск системы агрегации объемов */
-    startVolumeAggregation() {
+    async startVolumeAggregation() {
         const connectedExchanges = this.exchanges.filter(
             (exchange) =>
                 this.connectionStatus[exchange.exchangeName] === 'connected',
@@ -132,7 +132,7 @@ export default class MultiExchangeAggregator {
         console.log(
             `🚀 Запуск системы агрегации объемов с ${connectedExchanges.length} биржами`,
         )
-        this.volumeAggregator.start()
+        await this.volumeAggregator.start()
     }
 
     /** Остановка системы */

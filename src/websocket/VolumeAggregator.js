@@ -1,3 +1,5 @@
+import HTTP from '../http/HTTP.js'
+
 /**
  * Класс для агрегации объемов торгов по всем биржам.
  * Рассчитывает объемы покупок и продаж за 30-секундные интервалы.
@@ -9,6 +11,11 @@ export default class VolumeAggregator {
         this.intervalTimer = null
         this.isRunning = false
         this.currentIntervalStart = null
+
+        // HTTP клиент для получения исторических данных
+        this.httpClient = new HTTP()
+        this.historicalAverages = { avgVbuy: 0, avgVsell: 0 }
+        this.historicalDataLoaded = false
 
         // Статистика по интервалам
         this.intervalHistory = []
@@ -29,11 +36,14 @@ export default class VolumeAggregator {
     }
 
     /** Запуск системы агрегации объемов */
-    start() {
+    async start() {
         if (this.isRunning) {
             console.log('⚠️ VolumeAggregator уже запущен')
             return
         }
+
+        // Сначала загружаем исторические данные
+        await this.loadHistoricalData()
 
         this.isRunning = true
         this.startNewInterval()
@@ -42,6 +52,29 @@ export default class VolumeAggregator {
         console.log(
             `⏱️ Интервал расчета: ${this.intervalDuration / 1000} секунд`,
         )
+    }
+
+    /** Загрузка исторических данных для сравнения */
+    async loadHistoricalData() {
+        try {
+            console.log('🔄 Загрузка исторических данных для анализа...')
+            this.historicalAverages = await this.httpClient.getAverageVolumes(
+                '1h',
+            )
+            this.historicalDataLoaded = true
+            console.log('✅ Исторические средние значения загружены:', {
+                avgBuy: this.formatMoney(this.historicalAverages.avgVbuy),
+                avgSell: this.formatMoney(this.historicalAverages.avgVsell),
+                intervals: this.historicalAverages.intervalsCount,
+            })
+        } catch (error) {
+            console.error(
+                '❌ Ошибка загрузки исторических данных:',
+                error.message,
+            )
+            this.historicalAverages = { avgVbuy: 0, avgVsell: 0 }
+            this.historicalDataLoaded = false
+        }
     }
 
     /** Остановка системы агрегации объемов */
@@ -58,45 +91,40 @@ export default class VolumeAggregator {
     startNewInterval() {
         const now = Date.now()
 
-        // Рассчитываем время начала следующего интервала
-        // Например, если сейчас 14:30:15, то следующий интервал начнется в 14:30:30
+        // Вычисляем ближайшую границу 30s вперёд
         const secondsInCurrentMinute = Math.floor((now / 1000) % 60)
         const secondsToNext30 =
             secondsInCurrentMinute < 30
                 ? 30 - secondsInCurrentMinute
                 : 60 - secondsInCurrentMinute
-        const nextIntervalStart = now + secondsToNext30 * 1000
+        const nextBoundary = now + secondsToNext30 * 1000
 
-        this.currentIntervalStart = nextIntervalStart
+        // Текущий бар: [intervalStart, nextBoundary), метка = intervalStart
+        const intervalStart = nextBoundary - this.intervalDuration
+        this.currentIntervalStart = intervalStart
 
-        // Сбрасываем данные по объемам у всех бирж
-        this.exchanges.forEach((exchange) => {
-            exchange.startNewInterval()
-        })
-
-        // Устанавливаем таймер на завершение интервала
-        const timeToWait = nextIntervalStart - now
+        // Таймер завершения бара на границе nextBoundary
+        const timeToWait = nextBoundary - now
         this.intervalTimer = setTimeout(() => {
             this.completeInterval()
         }, timeToWait)
 
-        const startTime = new Date(nextIntervalStart).toLocaleTimeString(
-            'ru-RU',
-        )
-        console.log(`🔄 Новый интервал начнется в ${startTime}`)
+        const boundaryTime = new Date(nextBoundary).toLocaleTimeString('ru-RU')
+        console.log(`🔄 Новый интервал завершится в ${boundaryTime}`)
     }
 
     /** Завершение текущего интервала и вывод результатов */
     completeInterval() {
-        // Конец текущего интервала совпадает с рассчитанным nextIntervalStart
-        const intervalEnd = this.currentIntervalStart
+        // Завершаем бар: интервал = [currentIntervalStart, currentIntervalStart + duration)
+        const intervalStart = this.currentIntervalStart
+        const intervalEnd = intervalStart + this.intervalDuration
         const intervalData = this.collectIntervalData(intervalEnd)
 
         // Обновляем историю для каждой биржи (буфер из 6 элементов)
         this.exchanges.forEach((exchange) => {
             const vd = exchange.getVolumeData()
             const snapshot = {
-                time: intervalEnd,
+                time: intervalStart,
                 buy: vd.buyVolume,
                 sell: vd.sellVolume,
             }
@@ -107,8 +135,9 @@ export default class VolumeAggregator {
         })
 
         // Обновляем глобальную историю (суммарные покупки/продажи по всем биржам)
+        // Используем только текущие объемы без добавления исторических
         const globalSnap = {
-            time: intervalEnd,
+            time: intervalStart,
             buy: intervalData.totals.buyVolume,
             sell: intervalData.totals.sellVolume,
         }
@@ -123,6 +152,16 @@ export default class VolumeAggregator {
 
         // Выводим единую агрегированную таблицу
         this.displayGlobalTable()
+
+        // Выводим сравнение с историческими средними
+        if (this.historicalDataLoaded) {
+            this.displayHistoricalComparison(intervalData.totals)
+        }
+
+        // На границе интервала сбрасываем счетчики для следующего бара
+        this.exchanges.forEach((exchange) => {
+            exchange.startNewInterval()
+        })
 
         // Запускаем следующий интервал
         if (this.isRunning) {
@@ -227,6 +266,20 @@ export default class VolumeAggregator {
 
     /** Определение цвета объемного бара */
     getVolumeColor(buyVolume, sellVolume) {
+        const total = buyVolume + sellVolume
+        if (this.historicalDataLoaded) {
+            const avgBuy = this.historicalAverages.avgVbuy || 0
+            const avgSell = this.historicalAverages.avgVsell || 0
+            const avgTotal = avgBuy + avgSell
+
+            if (avgTotal > 0 && total > 0) {
+                const baselineBuyRatio = avgBuy / avgTotal
+                const currentBuyRatio = buyVolume / total
+
+                return currentBuyRatio >= baselineBuyRatio ? '🟢' : '🔴'
+            }
+        }
+
         if (buyVolume > sellVolume) {
             return '🟢' // Зеленый - покупок больше
         } else if (sellVolume > buyVolume) {
@@ -234,5 +287,58 @@ export default class VolumeAggregator {
         } else {
             return '🔴' // Красный по умолчанию при равенстве
         }
+    }
+
+    /** Отображение сравнения с историческими средними */
+    displayHistoricalComparison(currentTotals) {
+        const buyDiff =
+            currentTotals.buyVolume - this.historicalAverages.avgVbuy
+        const sellDiff =
+            currentTotals.sellVolume - this.historicalAverages.avgVsell
+
+        const buyPercentChange =
+            this.historicalAverages.avgVbuy > 0
+                ? ((buyDiff / this.historicalAverages.avgVbuy) * 100).toFixed(1)
+                : '0.0'
+        const sellPercentChange =
+            this.historicalAverages.avgVsell > 0
+                ? ((sellDiff / this.historicalAverages.avgVsell) * 100).toFixed(
+                      1,
+                  )
+                : '0.0'
+
+        console.log('\n' + '='.repeat(80))
+        console.log('📈 СРАВНЕНИЕ С ИСТОРИЧЕСКИМИ СРЕДНИМИ (за 1 час)')
+        console.log('='.repeat(80))
+        console.log(`Покупки:`)
+        console.log(
+            `  Текущий интервал: ${this.formatMoney(currentTotals.buyVolume)}`,
+        )
+        console.log(
+            `  Историческое среднее: ${this.formatMoney(
+                this.historicalAverages.avgVbuy,
+            )}`,
+        )
+        console.log(
+            `  Разница: ${buyDiff >= 0 ? '+' : ''}${this.formatMoney(
+                buyDiff,
+            )} (${buyPercentChange >= 0 ? '+' : ''}${buyPercentChange}%)`,
+        )
+
+        console.log(`Продажи:`)
+        console.log(
+            `  Текущий интервал: ${this.formatMoney(currentTotals.sellVolume)}`,
+        )
+        console.log(
+            `  Историческое среднее: ${this.formatMoney(
+                this.historicalAverages.avgVsell,
+            )}`,
+        )
+        console.log(
+            `  Разница: ${sellDiff >= 0 ? '+' : ''}${this.formatMoney(
+                sellDiff,
+            )} (${sellPercentChange >= 0 ? '+' : ''}${sellPercentChange}%)`,
+        )
+        console.log('='.repeat(80) + '\n')
     }
 }
